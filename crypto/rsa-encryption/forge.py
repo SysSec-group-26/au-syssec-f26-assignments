@@ -56,7 +56,13 @@ def forge(message: bytes, N, e) -> bytes:
 #TODO
 def get_secret(message, N, e):
    return
-   
+
+def lsb_attack():
+   #lsb attack: https://crypto.stackexchange.com/questions/11053/rsa-least-significant-bit-oracle-attack
+   odd = "No quote for you!"
+   even = "I do not like even numbers."
+
+
 # print(get_params("https://rsaenc.syssec.dk/"))
 
 print(test_quote("https://rsaenc.syssec.dk/"))
