@@ -5,6 +5,7 @@ import os
 import struct
 import fcntl
 import select
+import ssl
 
 TUNSETIFF = 0x400454CA
 IFF_TUN = 0x0001
@@ -25,23 +26,33 @@ print(f"Interface Name: {ifname}")
 os.system(f"ip addr add 192.168.53.1/24 dev {ifname}")
 os.system(f"ip link set dev {ifname} up")
 
-# Create UDP socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind((SERVER_IP, SERVER_PORT))
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.load_cert_chain("server-cert.pem", "server-key.pem")
+context.load_verify_locations("ca-cert.pem")
+context.verify_mode = ssl.CERT_REQUIRED
 
-print(f"Listening on UDP {SERVER_IP}:{SERVER_PORT}")
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.bind((SERVER_IP, SERVER_PORT))
+sock.listen(1)
+
+conn, addr = context.wrap_socket(sock, server_side=True).accept()
+
+print(f"Listening on TLS {SERVER_IP}:{SERVER_PORT}")
+
 
 ip, port = None, None
 
 while True:
     # this will block until at least one interface is ready
-    ready, _, _ = select.select([sock, tun], [], [])
+    ready, _, _ = select.select([conn, tun], [], [])
     for fd in ready:
-        if fd is sock:
-            data, (cip, cport) = sock.recvfrom(2048)
-            ip, port = cip, cport
+        if fd is conn:
+            data = conn.recv(2048)
+            if not data:
+                break
             pkt = IP(data)
-            print("From socket <==: {} --> {}".format(pkt.src, pkt.dst))
+            print("From TLS <==: {} --> {}".format(pkt.src, pkt.dst))
 
             os.write(tun, data)
 
@@ -50,5 +61,4 @@ while True:
             if packet:
               pkt = IP(packet)
               print("From tun ==>: {} --> {}".format(pkt.src, pkt.dst))
-              if ip is not None and port is not None:
-                sock.sendto(packet, (ip, port))
+              conn.send(packet)
