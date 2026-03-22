@@ -10,7 +10,7 @@ if not os.getenv('SHARED_KEY'):
     
 SHARED_KEY = os.getenv('SHARED_KEY').encode()
 
-ICMP_ECHO_REQUEST = 47
+ICMP_TYPE = 47
 
 def calculate_checksum( data):
   checksum = 0
@@ -30,13 +30,12 @@ def calculate_checksum( data):
 
 
 def create_packet(payload: bytes) -> bytes:
-    # pid = os.getpid() & 0xFFFF
     # compose header with checksum = 0
-    header = struct.pack("!BBHHH", ICMP_ECHO_REQUEST, 0, 0, 0, 1)
+    header = struct.pack("!BBHHH", ICMP_TYPE, 0, 0, 0, 0)
     # calculate checksum
     checksum = calculate_checksum(header + payload)
     # add the checksum to the header
-    header = struct.pack("!BBHHH", ICMP_ECHO_REQUEST, 0, checksum, 0, 1)
+    header = struct.pack("!BBHHH", ICMP_TYPE, 0, checksum, 0, 0)
     # return the packet
     return header + payload
 
@@ -44,11 +43,11 @@ def create_packet(payload: bytes) -> bytes:
 if __name__ == '__main__':
     
     sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
-    # the name of the outside listener as solved by Docker DNS
     if len(sys.argv) > 1:
-        HOST = sys.argv[1]
+        CLIENT = sys.argv[1]
     else:
         exit()
+    
     cipher = Fernet(SHARED_KEY)
 
     while True:
@@ -56,8 +55,8 @@ if __name__ == '__main__':
         encrypted_message = cipher.encrypt(bytes(message.encode()))
         packet = create_packet(encrypted_message)
         try:
-            print(f'Sending to {(HOST, 0)} secret message {encrypted_message}...')
-            sock.sendto(packet, (HOST, 0))
+            print(f'Sending to {(CLIENT, 0)} secret message {encrypted_message}...')
+            sock.sendto(packet, (CLIENT, 0))
             print('ICMP packet sent!')
         except Exception as e:
             print("Error:", e)

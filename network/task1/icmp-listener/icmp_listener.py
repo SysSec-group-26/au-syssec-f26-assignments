@@ -25,11 +25,11 @@ def get_protocol_type_and_offset(header: bytes):
     ihl = version_ihl & 0xF
 
     # Calculate IP header length in bytes
-    iph_length = ihl * 4
+    offset = ihl * 4
     protocol_num = iph[6]
     if protocol_num in PROTOCOL_MAP:
-        return (PROTOCOL_MAP[protocol_num], iph_length)
-    return (protocol_num, iph_length)
+        return (PROTOCOL_MAP[protocol_num], offset)
+    return (protocol_num, offset)
     
 
 if __name__ == '__main__':
@@ -41,20 +41,16 @@ if __name__ == '__main__':
         exit()
         
     PORT = 0
-
-    # general_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
+    
     sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
     sock.bind((HOST, PORT))
-    # general_sock.connect((HOST, PORT))
 
-    
     print("Listening to", HOST)
 
     cipher = Fernet(SHARED_KEY)
 
     while True:
-        data, addr = sock.recvfrom(1024)
+        data, _ = sock.recvfrom(1024)
         print('data:', data)
         print('datalen:', len(data))
         ip_header = data[:20]
@@ -62,9 +58,11 @@ if __name__ == '__main__':
         print(f"Protocol: {protocol_type}")
         print(f'offset: {offset}')
         if protocol_type == "ICMP":
+            # add ICMP header length to the offset
+            offset += 4
             try:
-                ciphertext = data[offset + 4: ]
-                # print(f'Encrypted Message: {ciphertext}')
+                ciphertext = data[offset: ]
+                
                 plaintext = cipher.decrypt(ciphertext)
                 print(f'Decrypted Message: {plaintext}')
             except Exception as e:
