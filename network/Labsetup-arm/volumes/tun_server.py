@@ -36,7 +36,7 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.bind((SERVER_IP, SERVER_PORT))
 sock.listen(1)
 
-conn, addr = context.wrap_socket(sock, server_side=True).accept()
+conn, addr = context.wrap_socket(sock, server_side=True).accept() # encryppted socket, cleint address
 
 print(f"Listening on TLS {SERVER_IP}:{SERVER_PORT}")
 
@@ -45,9 +45,9 @@ ip, port = None, None
 
 while True:
     # this will block until at least one interface is ready
-    ready, _, _ = select.select([conn, tun], [], [])
+    ready, _, _ = select.select([conn, tun], [], []) # TLS socket, TUN interface
     for fd in ready:
-        if fd is conn:
+        if fd is conn: # data from VPN client
             data = conn.recv(2048)
             if not data:
                 break
@@ -56,7 +56,7 @@ while True:
 
             os.write(tun, data)
 
-        if fd is tun:
+        if fd is tun: # data from the local network 
             packet = os.read(tun, 2048)
             if packet:
               pkt = IP(packet)

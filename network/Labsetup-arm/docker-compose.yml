@@ -15,18 +15,22 @@ services:
             net-10.9.0.0:
                 ipv4_address: 10.9.0.5
         command: bash -c "
-                     tail -f /dev/null
+                    ip route replace 192.168.60.0/24 via 10.9.0.11 &&
+                    cd /volumes &&
+                    python3 tun_client.py
                  "
 
     Host1:
         image: handsonsecurity/seed-ubuntu:large-arm
-        container_name: host-192.168.60.5
-        tty: true
+        container_name: host-192.18.60.5
+        tty: true6
         cap_add:
                 - ALL
         networks:
             net-192.168.60.0:
                 ipv4_address: 192.168.60.5
+        volumes:
+            - ./volumes:/volumes
         command: bash -c "
                       ip route del default  &&
                       ip route add default via 192.168.60.11  &&
@@ -70,7 +74,8 @@ services:
         command: bash -c "
                       ip route del default  &&
                       ip route add default via 10.9.0.1 &&
-                      tail -f /dev/null
+                      cd /volumes &&
+                      python3 tun_server.py
                  "
 
 networks:
