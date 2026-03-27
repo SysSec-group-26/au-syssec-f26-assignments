@@ -1,0 +1,47 @@
+services:
+  icmp-listener:
+    build: ./icmp-listener
+    container_name: icmp-listener
+    cap_add:
+      - NET_RAW
+    environment:
+      - SHARED_KEY=${SHARED_KEY}
+    networks:
+      - local_net
+      
+  general-listener:
+    build: ./general-listener
+    container_name: general-listener
+    ports:
+      - "5005:5005/udp"
+    networks:
+      - local_net
+
+  icmp-sender:
+    build: ./icmp-sender
+    container_name: icmp-sender
+    tty: true
+    stdin_open: true
+    cap_add:
+      - NET_RAW
+    environment:
+      - SHARED_KEY=${SHARED_KEY}
+    network_mode: "service:proxy"
+
+
+  general-sender:
+    build: ./general-sender
+    container_name: general-sender
+    network_mode: "service:proxy"
+
+  
+  proxy:
+    build: ./proxy
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - local_net
+      
+networks:
+  local_net:
+    driver: bridge
