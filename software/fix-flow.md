@@ -4,76 +4,57 @@ First, read [problem-with-code](problem-with-code.md) markdown file.
 
 It can be seen on [IBM log4shell documentation](https://www.ibm.com/think/topics/log4shell#280060107) that the developers tried multiple times to solve the issue, but caused other CVEs. So we will focus here on: CVE-2021-45046, CVE-2021-45105 and CVE-2021-44832.
 
-### Find code changes
+-----
+### Solution Flow and Patch Timeline
 
-We ran first in the log4j repository a command to see if they talked about this: 
+
+**November 29, 2021**
+The initial mitigation strategy began by disabling lookups by default. Following this change, lookups required explicit configuration to function.
+
+  * **Commit:** [001aaada7d](https://www.google.com/search?q=https://github.com/apache/logging-log4j2/commit/001aaada7d)
+  * **Jira:** [LOG4J2-3198](https://issues.apache.org/jira/browse/LOG4J2-3198)
+
+**December 4–5, 2021**
+To address the primary vulnerability, the developers disabled most JNDI protocols and restricted LDAP access. They implemented a JNDI manager that, by default, restricted lookups using `ALLOWED_PROTOCOLS`, `ALLOWED_HOSTS`, and `ALLOWED_CLASSES`.
+
+  * **Commit:** [c77b3cb393](https://www.google.com/search?q=https://github.com/apache/logging-log4j2/commit/c77b3cb393)
+
+An additional commit was integrated to further strengthen these LDAP restrictions.
+
+  * **Commit:** [d82b47c6fa](https://www.google.com/search?q=https://github.com/apache/logging-log4j2/commit/d82b47c6fa)
+  * **Jira:** [LOG4J2-3201](https://issues.apache.org/jira/browse/LOG4J2-3201)
+
+While this was intended to resolve the issue, a bypass remained in `PatternLayout` involving Thread Context Lookups (e.g., `$ctx:userAgent`). If an attacker injected a payload via `MDC.put("userAgent", "${jndi:ldap://...")`, the engine's recursive evaluation still triggered the JNDI lookup. This bypass was tracked as **CVE-2021-45046**.
+
+**December 13–14, 2021**
+To resolve CVE-2021-45046, the string substitution recursion logic was completely removed.
+
+  * **Commit:** [806023265f](https://www.google.com/search?q=https://github.com/apache/logging-log4j2/commit/806023265f)
+
+Following this patch, a new vulnerability emerged: **CVE-2021-45105** (a Denial of Service attack). It was discovered that attackers could force infinite recursion using self-referential lookups, such as `${ctx:foo:-${ctx:foo}}`. This resulted in a `StackOverflowError`, crashing the application.
+
+**December 18, 2021**
+To mitigate the DoS vulnerability, the developers patched the `StackOverflowError` in `OptionConverter.substVars()` by adding logic to detect cycle references.
+
+  * **Commit:** [dea97d90dd](https://www.google.com/search?q=https://github.com/apache/logging-log4j2/commit/dea97d90dd)
+
+**December 28, 2021**
+Despite previous restrictions, a final vulnerability was identified: **CVE-2021-44832**. This involved a Remote Code Execution flaw where the JDBC Appender could be manipulated to use a malicious JNDI URI.
+
+To definitively solve the problem, the developers moved JNDI into its own isolated module and strictly limited it to the `java` protocol.
+
+  * **Commits:** [14e307ac82](https://www.google.com/search?q=https://github.com/apache/logging-log4j2/commit/14e307ac82), [f6564bb993](https://www.google.com/search?q=https://github.com/apache/logging-log4j2/commit/f6564bb993), [95b24f77e7](https://www.google.com/search?q=https://github.com/apache/logging-log4j2/commit/95b24f77e7)
+  * **Jira:** [LOG4J2-3242](https://issues.apache.org/jira/browse/LOG4J2-3242)
+
+The series of architectural vulnerabilities was ultimately resolved with the release of Log4j version 2.17.1.
+
+
+
+### Official document about log4shell
 
 ```bash
 git log -S "CVE-2021-45046" --name-only --format="" | sort -u | awk 'NF' | xargs code
 git log -p -S "CVE-2021-45046" > cve_commits.diff
 ```
 
-## CVE-2021-45046 (First patch)
-
-
-> The first patch Apache released, Log4J version 2.15.0, closed much of the Log4Shell vulnerability. However, hackers could still send malicious JNDI lookups to systems that used certain non-default settings. Apache addressed this flaw with Log4J version 2.16.0. "IBM"
-
-Jira ticket: [JNDI lookups in layout (not message patterns) enabled in Log4j2 < 2.16.0](https://issues.apache.org/jira/browse/LOG4J2-3221) 
-
-What they talked about it: 
-```diff
--[#CVE-2021-45046]
--=== {cve-url-prefix}/CVE-2021-45046[CVE-2021-45046]
--
--[cols="1h,5"]
--|===
--|Summary |Thread Context Lookup is vulnerable to remote code execution in certain configurations
--|CVSS 3.x Score & Vector |9.0 CRITICAL (CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:C/C:H/I:H/A:H)
--|Components affected |`log4j-core`
--|Versions affected |`[2.0-beta9, 2.3.1) ∪ [2.4, 2.12.3) ∪ [2.13.0, 2.17.0)`
--|Versions fixed |`2.3.1` (for Java 6), `2.12.3` (for Java 7), and `2.17.0` (for Java 8 and later)
--|===
--
--[#CVE-2021-45046-description]
--==== Description
--
--It was found that the fix to address <<CVE-2021-44228>> in Log4j `2.15.0` was incomplete in certain non-default configurations.
--When the logging configuration uses a non-default Pattern Layout with a Thread Context Lookup (for example, `$${ctx:loginId}`), attackers with control over Thread Context Map (MDC) can craft malicious input data using a JNDI Lookup pattern, resulting in an information leak and remote code execution in some environments and local code execution in all environments.
--Remote code execution has been demonstrated on macOS, Fedora, Arch Linux, and Alpine Linux.
--
--Note that this vulnerability is not limited to just the JNDI lookup.
--Any other Lookup could also be included in a Thread Context Map variable and possibly have private details exposed to anyone with access to the logs.
--
--Note that only the `log4j-core` JAR file is impacted by this vulnerability.
--Applications using only the `log4j-api` JAR file without the `log4j-core` JAR file are not impacted by this vulnerability.
--
--[#CVE-2021-45046-mitigation]
--==== Mitigation
--
--Upgrade to Log4j `2.3.1` (for Java 6), `2.12.3` (for Java 7), or `2.17.0` (for Java 8 and later).
--
--[#CVE-2021-45046-credits]
--==== Credits
--
--This issue was discovered by Kai Mindermann of iC Consult and separately by 4ra1n.
--
--Additional vulnerability details discovered independently by Ash Fox of Google, Alvaro Muñoz and Tony Torralba from GitHub, Anthony Weems of Praetorian, and RyotaK (@ryotkak).
--
--[#CVE-2021-45046-references]
--==== References
--
--- {cve-url-prefix}/CVE-2021-45046[CVE-2021-45046]
--- https://issues.apache.org/jira/browse/LOG4J2-3221[LOG4J2-3221]
-```
-
-
-From `git log --oneline --grep="JNDI"` we identified the first commit patch: `d82b47c6fa LOG4J2-3201 - Limit the protocols JNDI can use by default. Limit the servers and classes that can be accessed via LDAP.` so lets start investigating the commit. We can use one of those commands: 
-```
-git show d82b47c6fa > cve-2021-45046.diff
-```
-or 
-```
-git config --global diff.tool vscode
-git config --global difftool.vscode.cmd 'code --wait --diff $LOCAL $REMOTE'
-git difftool d82b47c6fa^ d82b47c6fa
-```
+The official document about how log4j solved the issue can be found in this repository as [cve_commits.txt](cve_commits.txt). 
